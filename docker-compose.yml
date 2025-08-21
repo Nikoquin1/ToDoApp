@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      SQLITE_DB_LOCATION: /data/todo.db
+    volumes:
+      - todo-data:/data
+    # restart: unless-stopped
+
+volumes:
+  todo-data:
