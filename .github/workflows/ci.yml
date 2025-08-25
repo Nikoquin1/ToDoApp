@@ -1,0 +1,42 @@
+name: CI (build & basic checks)
+
+on:
+  pull_request:
+    branches: [ develop, master ]
+  push:
+    branches: [ develop ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'yarn'
+
+      - name: Enable Yarn 1.x with Corepack
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+          yarn -v
+
+      - name: Install deps (lockfile estricto)
+        run: yarn install --frozen-lockfile --network-timeout 600000
+
+      # Si no tienes script "test" en package.json, se salta
+      - name: Run tests (if present)
+        run: |
+          if yarn -s run | grep -q "\"test\""; then
+            yarn test
+          else
+            echo "No test script found in package.json, skipping."
+          fi
+
+      - name: Build Docker image
+        run: docker build -t todoapp-ci:check .
