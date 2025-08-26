@@ -1,0 +1,73 @@
+name: Build & Release to Docker Hub
+
+on:
+  push:
+    tags:
+      - "v*.*.*"        # ej: v0.1.0
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag de versión (ej: v0.1.0)"
+        required: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    env:
+      IMAGE: docker.io/nikoquin/todoapp
+      GIT_SHA: ${{ github.sha }}
+      # Si viene por tag push, usa ese; si es manual, usa el input
+      VERSION: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validar VERSION
+        if: ${{ env.VERSION == '' }}
+        run: |
+          echo "No se pudo resolver VERSION. Si ejecutas manual, pasa 'tag' (ej: v0.1.0)."
+          exit 1
+
+      - name: Derivar tags (semver y sha)
+        id: meta
+        run: |
+          CLEAN="${VERSION#v}"                    # 0.1.0
+          MAJOR="$(echo "$CLEAN" | cut -d. -f1)"  # 0
+          MINOR="$(echo "$CLEAN" | cut -d. -f2)"  # 1
+          SHA7="${GIT_SHA::7}"
+          echo "clean=$CLEAN" >> $GITHUB_OUTPUT
+          echo "major=$MAJOR" >> $GITHUB_OUTPUT
+          echo "minor=$MINOR" >> $GITHUB_OUTPUT
+          echo "sha7=$SHA7" >> $GITHUB_OUTPUT
+
+      - name: Login to Docker Hub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Build image
+        run: |
+          docker build \
+            --label org.opencontainers.image.source=${{ github.repositoryUrl }} \
+            --label org.opencontainers.image.revision=${{ github.sha }} \
+            --label org.opencontainers.image.version=${{ steps.meta.outputs.clean }} \
+            -t $IMAGE:${VERSION} \
+            -t $IMAGE:${{ steps.meta.outputs.clean }} \
+            -t $IMAGE:${{ steps.meta.outputs.major }}.${{ steps.meta.outputs.minor }} \
+            -t $IMAGE:${{ steps.meta.outputs.major }} \
+            -t $IMAGE:latest \
+            -t $IMAGE:sha-${{ steps.meta.outputs.sha7 }} \
+            .
+
+      # (Opcional) smoke test rápido antes de publicar
+      # - name: Smoke test
+      #   run: |
+      #     docker run -d --rm -p 3000:3000 --name todoapp $IMAGE:${VERSION}
+      #     sleep 5
+      #     curl -fsS http://localhost:3000/ || (docker logs todoapp && exit 1)
+      #     docker stop todoapp
+
+      - name: Push all tags
+        run: docker push $IMAGE --all-tags
