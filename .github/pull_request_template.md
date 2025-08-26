@@ -8,13 +8,13 @@
 - [ ] refactor (cambio interno sin afectar comportamiento)
 - [ ] chore (infra, dependencias, build)
 - [ ] test (tests nuevos o ajustados)
+- [ ] release (tags,versionamiento)
 
 ## Cómo probar
 ```bash
-docker compose up --build
+docker compose up -d --build
 ```
 <!--
-Esto levantará todos los contenedores necesarios.
 La app estará disponible en http://localhost:9000
 Puedes revisar los logs con:
 docker compose logs
