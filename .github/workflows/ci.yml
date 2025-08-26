@@ -26,11 +26,10 @@ jobs:
           corepack prepare yarn@1.22.22 --activate
           yarn -v
 
-      - name: Install deps (lockfile estricto)
+      - name: Install deps 
         run: yarn install --frozen-lockfile --network-timeout 600000
 
-      # Si no tienes script "test" en package.json, se salta
-      - name: Run tests (if present)
+      - name: Run tests
         run: |
           if yarn -s run | grep -q "\"test\""; then
             yarn test
