@@ -10,12 +10,13 @@
 - [ ] test (tests nuevos o ajustados)
 
 ## Cómo probar
-docker build -t todoapp:local .
-docker run --rm -p 3000:3000 \
-  -e NODE_ENV=production \
-  -e SQLITE_DB_LOCATION=/data/todo.db \
-  -v $(pwd)/.data:/data \
-  --name todoapp \
-  todoapp:local
-# App en http://localhost:3000
+```bash
+docker compose up --build
+```
+<!--
+Esto levantará todos los contenedores necesarios.
+La app estará disponible en http://localhost:9000
+Puedes revisar los logs con:
+docker compose logs
+-->
 
