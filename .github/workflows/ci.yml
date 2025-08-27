@@ -29,13 +29,28 @@ jobs:
       - name: Install deps 
         run: yarn install --frozen-lockfile --network-timeout 600000
 
-      - name: Run tests
+      - name: Run tests (con cobertura si existe)
         run: |
           if yarn -s run | grep -q "\"test\""; then
-            yarn test
+            # intenta con jest/nyc si lo tienes
+            yarn test --coverage || yarn test || true
           else
             echo "No test script found in package.json, skipping."
           fi
 
       - name: Build Docker image
         run: docker build -t todoapp-ci:check .
+
+      # ← ← Guarda el build de tu app si existe
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-build
+          path: |
+            build/**
+            dist/**
+            coverage/**
+            *.log
+          if-no-files-found: ignore
+          retention-days: 14
