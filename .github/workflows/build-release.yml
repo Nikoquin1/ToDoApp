@@ -3,7 +3,7 @@ name: Build & Release to Docker Hub
 on:
   push:
     tags:
-      - "v*.*.*"        
+      - "v*.*.*"
   workflow_dispatch:
     inputs:
       tag:
@@ -34,9 +34,9 @@ jobs:
       - name: Derivar tags (semver y sha)
         id: meta
         run: |
-          CLEAN="${VERSION#v}"                    # 0.1.0
-          MAJOR="$(echo "$CLEAN" | cut -d. -f1)"  # 0
-          MINOR="$(echo "$CLEAN" | cut -d. -f2)"  # 1
+          CLEAN="${VERSION#v}"
+          MAJOR="$(echo "$CLEAN" | cut -d. -f1)"
+          MINOR="$(echo "$CLEAN" | cut -d. -f2)"
           SHA7="${GIT_SHA::7}"
           echo "clean=$CLEAN" >> $GITHUB_OUTPUT
           echo "major=$MAJOR" >> $GITHUB_OUTPUT
@@ -62,3 +62,16 @@ jobs:
 
       - name: Push all tags
         run: docker push $IMAGE --all-tags
+
+      # ← ← Guardar la imagen como .tar.gz (artifact)
+      - name: Export image as artifact (tar.gz)
+        run: |
+          mkdir -p artifacts
+          docker save $IMAGE:${{ steps.meta.outputs.clean }} | gzip > artifacts/todoapp-${{ steps.meta.outputs.clean }}.tar.gz
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-${{ steps.meta.outputs.clean }}
+          path: artifacts/todoapp-${{ steps.meta.outputs.clean }}.tar.gz
+          retention-days: 7
