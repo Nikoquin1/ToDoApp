@@ -1,14 +1,11 @@
 name: Deploy to VM (from Docker Hub)
 
 on:
-  workflow_run:
-    workflows: ["Build & Release to Docker Hub"]
-    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
         description: "Tag a desplegar (ej: v0.2.0). Si lo pones, ignora artifact."
-        required: false
+        required: true
 
 concurrency:
   group: deploy-production
@@ -16,38 +13,22 @@ concurrency:
 
 jobs:
   deploy:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout (infra)
         uses: actions/checkout@v4
 
-      - name: Determinar VERSION (manual o artifact)
+      - name: Determinar VERSION (manual)
         id: choose
         run: |
           if [ -n "${{ github.event.inputs.tag || '' }}" ]; then
             echo "version=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Download image-meta
-        if: ${{ github.event_name == 'workflow_run' && steps.choose.outputs.version == '' }}
-        uses: actions/download-artifact@v4
-        with:
-          name: image-meta
-          path: .
-
-      - name: Leer VERSION del artifact
-        if: ${{ github.event_name == 'workflow_run' && steps.choose.outputs.version == '' }}
-        id: meta
-        run: |
-          set -euo pipefail
-          source image_meta.txt
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
       - name: Export VERSION
         run: |
-          VER="${{ steps.choose.outputs.version || steps.meta.outputs.version }}"
+          VER="${{ steps.choose.outputs.version }}"
           echo "VERSION=$VER" >> $GITHUB_ENV
           echo "Usando VERSION=$VER"
 
@@ -98,6 +79,7 @@ jobs:
             if [ -n "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
               echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
             fi
+            echo "$VERSION" > DEPLOYED_VERSION.txt
             VERSION="$VERSION" docker compose -f docker-compose.prod.yml pull
             VERSION="$VERSION" docker compose -f docker-compose.prod.yml up -d --remove-orphans
             docker image prune -f

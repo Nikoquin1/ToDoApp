@@ -18,12 +18,11 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
 
     env:
       IMAGE: docker.io/nikoquin/todoapp
       GIT_SHA: ${{ github.sha }}
-      # Si viene por tag push, usa ese; si es manual, usa el input
       VERSION: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
       DOCKER_BUILDKIT: 1
 
@@ -106,7 +105,6 @@ jobs:
           path: artifacts/todoapp-${{ steps.meta.outputs.clean }}.tar.gz
           retention-days: 7
 
-      # Producing the image-meta artifact for deploy workflow
       - name: Guardar metadata de imagen (VERSION)
         run: |
           mkdir -p artifact
@@ -120,3 +118,13 @@ jobs:
           path: artifact/image_meta.txt
           if-no-files-found: error
           retention-days: 7
+
+      - name: Save deployed version to repo
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' }}
+        run: |
+          echo "${{ github.event.inputs.tag }}" > DEPLOYED_VERSION.md
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git add DEPLOYED_VERSION.md
+          git commit -m "Update deployed version to ${{ github.event.inputs.tag }}"
+          git push
