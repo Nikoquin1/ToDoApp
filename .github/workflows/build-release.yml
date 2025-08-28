@@ -19,7 +19,6 @@ jobs:
     env:
       IMAGE: docker.io/nikoquin/todoapp
       GIT_SHA: ${{ github.sha }}
-      # Si viene por tag push, usa ese; si es manual, usa el input
       VERSION: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
 
     steps:
@@ -31,6 +30,14 @@ jobs:
         run: |
           echo "No se pudo resolver VERSION. Si ejecutas manual, pasa 'tag' (ej: v0.1.0)."
           exit 1
+
+      - name: Run tests with Docker Compose
+        env:
+          COMPOSE_DOCKER_CLI_BUILD: 1
+          DOCKER_BUILDKIT: 1
+        run: |
+          docker compose -f docker-compose.test.yml up --build --exit-code-from app-tests
+          docker compose -f docker-compose.test.yml down -v
 
       - name: Derivar tags (semver y sha)
         id: meta
@@ -60,14 +67,6 @@ jobs:
             -t $IMAGE:latest \
             -t $IMAGE:sha-${{ steps.meta.outputs.sha7 }} \
             .
-
-      # (Opcional) smoke test rápido antes de publicar
-      # - name: Smoke test
-      #   run: |
-      #     docker run -d --rm -p 3000:3000 --name todoapp $IMAGE:${VERSION}
-      #     sleep 5
-      #     curl -fsS http://localhost:3000/ || (docker logs todoapp && exit 1)
-      #     docker stop todoapp
 
       - name: Push all tags
         run: docker push $IMAGE --all-tags
