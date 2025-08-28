@@ -67,18 +67,18 @@ jobs:
       - name: Copiar archivos y hacer deploy local
         shell: bash
         run: |
-            set -euo pipefail
-            # Check that all necessary files exist before copying
-            test -f docker-compose.prod.yml
-            test -f .env.prod
-            test -f nginx/default.conf   # <-- This line ensures the file is present
+          set -euo pipefail
+          cd ${{ github.workspace }}  # Ensure we are in the repo root
+          test -f docker-compose.prod.yml
+          test -f .env.prod
+          test -f nginx/default.conf
 
-            sudo mkdir -p /opt/todoapp
-            sudo cp docker-compose.prod.yml .env.prod nginx/default.conf /opt/todoapp/
-            cd /opt/todoapp
-            echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-            sudo mv -f .env.prod .env
-            echo "$VERSION" | sudo tee DEPLOYED_VERSION.txt
-            sudo VERSION="$VERSION" docker compose -f docker-compose.prod.yml pull
-            sudo VERSION="$VERSION" docker compose -f docker-compose.prod.yml up -d --remove-orphans
-            sudo docker image prune -f
+          sudo mkdir -p /opt/todoapp
+          sudo cp docker-compose.prod.yml .env.prod nginx/default.conf /opt/todoapp/
+          cd /opt/todoapp
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          sudo mv -f .env.prod .env
+          echo "$VERSION" | sudo tee DEPLOYED_VERSION.txt
+          sudo VERSION="$VERSION" docker compose -f docker-compose.prod.yml pull
+          sudo VERSION="$VERSION" docker compose -f docker-compose.prod.yml up -d --remove-orphans
+          sudo docker image prune -f
