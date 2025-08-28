@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag a desplegar (ej: v0.2.0). Si lo pones, ignora artifact."
+        description: "Tag a desplegar (ej: v0.2.0)."
         required: true
 
 concurrency:
@@ -13,7 +13,11 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    # Usa tu runner self-hosted "deployer"
+    runs-on: [self-hosted, linux, deploy]
+
+    env:
+      IMAGE: docker.io/nikoquin/todoapp
 
     steps:
       - name: Checkout (infra)
@@ -21,27 +25,34 @@ jobs:
 
       - name: Determinar VERSION (manual)
         id: choose
+        shell: bash
         run: |
+          set -euo pipefail
           if [ -n "${{ github.event.inputs.tag || '' }}" ]; then
             echo "version=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Export VERSION
+        shell: bash
         run: |
+          set -euo pipefail
           VER="${{ steps.choose.outputs.version }}"
           echo "VERSION=$VER" >> $GITHUB_ENV
           echo "Usando VERSION=$VER"
 
       - name: Check VERSION is defined
+        shell: bash
         run: |
-          if [ -z "$VERSION" ]; then
+          set -euo pipefail
+          if [ -z "${VERSION:-}" ]; then
             echo "VERSION no definido. No puedo continuar."
             exit 1
           fi
-        shell: bash
 
       - name: Render .env.prod
+        shell: bash
         run: |
+          set -euo pipefail
           cat > .env.prod << 'EOF'
           # App
           PORT=3000
@@ -54,7 +65,7 @@ jobs:
           MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
           EOF
 
-      - name: Copiar archivos a la VM
+      - name: Crear carpeta remota y copiar archivos
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VM_HOST }}
@@ -73,13 +84,23 @@ jobs:
           script: |
             set -euo pipefail
             export VERSION="${{ env.VERSION }}"
-            export IMAGE="docker.io/nikoquin/todoapp"
+            export IMAGE="${{ env.IMAGE }}"
+
+            mkdir -p /opt/todoapp
             cd /opt/todoapp
-            mv .env.prod .env
-            if [ -n "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
-              echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-            fi
+
+            # Autenticación en Docker Hub (falla si no hay credenciales)
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+            # Activar env de producción
+            mv -f .env.prod .env
+
+            # Guardar versión desplegada
             echo "$VERSION" > DEPLOYED_VERSION.txt
+
+            # Traer y levantar la versión
             VERSION="$VERSION" docker compose -f docker-compose.prod.yml pull
             VERSION="$VERSION" docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+            # Limpieza de imágenes viejas
             docker image prune -f
