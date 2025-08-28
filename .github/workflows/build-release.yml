@@ -10,6 +10,10 @@ on:
         description: "Tag de versión (ej: v0.1.0)"
         required: true
 
+concurrency:
+  group: build-release
+  cancel-in-progress: true
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -19,7 +23,9 @@ jobs:
     env:
       IMAGE: docker.io/nikoquin/todoapp
       GIT_SHA: ${{ github.sha }}
+      # Si viene por tag push, usa ese; si es manual, usa el input
       VERSION: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+      DOCKER_BUILDKIT: 1
 
     steps:
       - name: Checkout
@@ -46,7 +52,6 @@ jobs:
       - name: Run tests with Docker Compose
         env:
           COMPOSE_DOCKER_CLI_BUILD: 1
-          DOCKER_BUILDKIT: 1
         run: |
           docker compose --env-file .env.ci -f docker-compose.test.yml up --build --exit-code-from app-tests
           docker compose --env-file .env.ci -f docker-compose.test.yml down -v
@@ -69,7 +74,7 @@ jobs:
       - name: Build image
         run: |
           docker build \
-            --label org.opencontainers.image.source=${{ github.repositoryUrl }} \
+            --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
             --label org.opencontainers.image.revision=${{ github.sha }} \
             --label org.opencontainers.image.version=${{ steps.meta.outputs.clean }} \
             -t $IMAGE:${VERSION} \
@@ -101,10 +106,12 @@ jobs:
           path: artifacts/todoapp-${{ steps.meta.outputs.clean }}.tar.gz
           retention-days: 7
 
+      # ← Artifact mínimo para que el deploy sepa qué tag usar
       - name: Guardar metadata de imagen (VERSION)
         run: |
           mkdir -p artifact
           echo "VERSION=${VERSION}" > artifact/image_meta.txt
+          echo "CLEAN=${{ steps.meta.outputs.clean }}" >> artifact/image_meta.txt
 
       - name: Subir artifact con VERSION
         uses: actions/upload-artifact@v4
@@ -113,4 +120,3 @@ jobs:
           path: artifact/image_meta.txt
           if-no-files-found: error
           retention-days: 7
-
