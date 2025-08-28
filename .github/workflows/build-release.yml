@@ -100,3 +100,17 @@ jobs:
           name: docker-image-${{ steps.meta.outputs.clean }}
           path: artifacts/todoapp-${{ steps.meta.outputs.clean }}.tar.gz
           retention-days: 7
+
+      - name: Guardar metadata de imagen (VERSION)
+        run: |
+          mkdir -p artifact
+          echo "VERSION=${VERSION}" > artifact/image_meta.txt
+
+      - name: Subir artifact con VERSION
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-meta
+          path: artifact/image_meta.txt
+          if-no-files-found: error
+          retention-days: 7
+

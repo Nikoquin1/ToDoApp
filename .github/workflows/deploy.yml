@@ -1,0 +1,110 @@
+name: Deploy to VM (from Docker Hub)
+
+on:
+  workflow_run:
+    workflows: ["Build & Release to Docker Hub"]  # nombre EXACTO del workflow de build
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag a desplegar (ej: v0.2.0). Si lo pones, ignora artifact."
+        required: false
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    # Solo corre automático si el build terminó OK o manual siempre
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    #environment: production   # también podrías usar: environment: { name: production }
+
+    steps:
+      - name: Checkout (infra)
+        uses: actions/checkout@v4
+
+      # 1) Si se ejecuta manual y pasas 'tag', úsalo
+      - name: Determinar VERSION (manual o artifact)
+        id: choose
+        run: |
+          if [ -n "${{ github.event.inputs.tag || '' }}" ]; then
+            echo "version=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 2) Si vino por workflow_run y no hay tag manual, descarga el artifact "image-meta"
+      - name: Download image-meta
+        if: ${{ github.event_name == 'workflow_run' && steps.choose.outputs.version == '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: image-meta
+          path: .
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Leer VERSION del artifact
+        if: ${{ github.event_name == 'workflow_run' && steps.choose.outputs.version == '' }}
+        id: meta
+        run: |
+          set -euo pipefail
+          source image_meta.txt
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # 3) Exportar VERSION (de 'choose' o de 'meta')
+      - name: Export VERSION
+        run: |
+          VER="${{ steps.choose.outputs.version || steps.meta.outputs.version }}"
+          echo "VERSION=$VER" >> $GITHUB_ENV
+          echo "Usando VERSION=$VER"
+
+      # 4) Generar .env.prod con secrets
+      - name: Render .env.prod
+        run: |
+          cat > .env.prod << 'EOF'
+          # App
+          PORT=3000
+          MYSQL_HOST=db
+          MYSQL_PORT=3306
+          MYSQL_USER=${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DB=${{ secrets.MYSQL_DB }}
+
+          # DB
+          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+          EOF
+
+      # 5) Copiar archivos a la VM
+      - name: Copiar archivos a la VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          source: "docker-compose.prod.yml,.env.prod,nginx/default.conf"
+          target: "/opt/todoapp"
+
+      # 6) Deploy remoto
+      - name: Deploy remoto (Docker Hub)
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            export VERSION="${{ env.VERSION }}"
+            export IMAGE="docker.io/nikoquin/todoapp"
+
+            cd /opt/todoapp
+            mv .env.prod .env   # docker compose lee .env del cwd
+
+            # (Opcional) login para evitar rate limits
+            if [ -n "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
+              echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+            fi
+
+            # Ejecutar compose con el archivo de prod y la VERSION
+            VERSION="$VERSION" docker compose -f docker-compose.prod.yml pull
+            VERSION="$VERSION" docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            docker image prune -f
