@@ -31,6 +31,19 @@ jobs:
           echo "No se pudo resolver VERSION. Si ejecutas manual, pasa 'tag' (ej: v0.1.0)."
           exit 1
 
+      - name: Prep env/secrets for compose (CI)
+        run: |
+          cat > .env.ci <<'EOF'
+          PORT=3000
+          MYSQL_HOST=db
+          MYSQL_PORT=3306
+          MYSQL_USER=${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DB=${{ secrets.MYSQL_DB }}
+          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+          EOF
+
+
       - name: Run tests with Docker Compose
         env:
           COMPOSE_DOCKER_CLI_BUILD: 1
