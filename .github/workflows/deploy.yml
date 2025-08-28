@@ -68,6 +68,11 @@ jobs:
         shell: bash
         run: |
             set -euo pipefail
+            # Check that all necessary files exist before copying
+            test -f docker-compose.prod.yml
+            test -f .env.prod
+            test -f nginx/default.conf   # <-- This line ensures the file is present
+
             sudo mkdir -p /opt/todoapp
             sudo cp docker-compose.prod.yml .env.prod nginx/default.conf /opt/todoapp/
             cd /opt/todoapp
