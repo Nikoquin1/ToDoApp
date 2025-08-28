@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Usamos Node solo para validar que el lockfile instala (rápido feedback si el lock está roto)
+      # Validación rápida del lockfile (opcional)
       - name: Set up Node & validate lockfile
         uses: actions/setup-node@v4
         with:
@@ -26,15 +26,28 @@ jobs:
           corepack prepare yarn@1.22.22 --activate
           yarn install --frozen-lockfile --network-timeout 600000
 
-      # Corre tests con compose de test (MySQL + app-tests)
+      # ⬇️ NUEVO: crear .env.ci desde GitHub Secrets
+      - name: Prep env/secrets for compose (CI)
+        run: |
+          cat > .env.ci <<'EOF'
+          PORT=3000
+          MYSQL_HOST=db
+          MYSQL_PORT=3306
+          MYSQL_USER=${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DB=${{ secrets.MYSQL_DB }}
+          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+          EOF
+
+      # Corre tests con compose (usa .env.ci)
       - name: Run tests with Docker Compose
         env:
           COMPOSE_DOCKER_CLI_BUILD: 1
           DOCKER_BUILDKIT: 1
         run: |
-          docker compose -f docker-compose.test.yml up --build --exit-code-from app-tests
-          docker compose -f docker-compose.test.yml down -v
+          docker compose --env-file .env.ci -f docker-compose.test.yml up --build --exit-code-from app-tests
+          docker compose --env-file .env.ci -f docker-compose.test.yml down -v
 
-      # Solo si los tests pasan, construimos la imagen de prod (tu Dockerfile final)
+      # Solo si los tests pasan, construimos la imagen de prod
       - name: Build production image
         run: docker build -t todoapp-ci:latest .

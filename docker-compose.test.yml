@@ -8,26 +8,29 @@ services:
       --collation-server=utf8mb4_unicode_ci
       --default-authentication-plugin=mysql_native_password
     environment:
-      MYSQL_DATABASE: todos_test
-      MYSQL_USER: app
-      MYSQL_PASSWORD: app
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DB}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD"]
       interval: 5s
       timeout: 3s
-      retries: 30
+      retries: 20
 
   app-tests:
     build:
       context: .
-      target: test-runner   # ← usamos el stage de tests
+      target: test-runner
     environment:
-      MYSQL_HOST: db
-      MYSQL_PORT: 3306
-      MYSQL_USER: app
-      MYSQL_PASSWORD: app
-      MYSQL_DB: todos_test
+      NODE_ENV: test
+      MYSQL_HOST: ${MYSQL_HOST:-db}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DB: ${MYSQL_DB}
     depends_on:
       db:
         condition: service_healthy

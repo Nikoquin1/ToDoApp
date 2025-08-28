@@ -10,13 +10,15 @@ services:
     environment:
       MYSQL_HOST: db
       MYSQL_PORT: 3306
-      MYSQL_USER: todo
-      MYSQL_PASSWORD: supersecret
-      MYSQL_DB: todos
+      MYSQL_DATABASE: ${MYSQL_DB}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
     volumes:
       - db-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootsecret"]
+      # Usa variables del contenedor (nota $$ para escapar el $ en YAML)
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -26,17 +28,15 @@ services:
   app:
     build: .
     environment:
-      PORT: 3000
-      
-      MYSQL_HOST: db
-      MYSQL_PORT: 3306
-      MYSQL_USER: todo
-      MYSQL_PASSWORD: supersecret
-      MYSQL_DB: todos
+      PORT: ${PORT:-3000}
+      MYSQL_HOST: ${MYSQL_HOST:-db}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DB: ${MYSQL_DB}
     depends_on:
       db:
         condition: service_healthy
-    
     volumes:
       - todo-data:/data
     expose:
