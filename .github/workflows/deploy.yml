@@ -27,7 +27,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -n "${{ github.event.inputs.tag }}" ]; then
+          if [ -n "${{ github.event.inputs.tag || '' }}" ]; then
             echo "version=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
           fi
 
@@ -52,39 +52,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat > .env.prod << EOF
-            # App
-            PORT=3000
-            MYSQL_HOST=db
-            MYSQL_PORT=3306
-            MYSQL_USER=${{ secrets.MYSQL_USER }}
-            MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
-            MYSQL_DB=${{ secrets.MYSQL_DB }}
-            # DB
-            MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
-            EOF
+          cat > .env.prod << 'EOF'
+          # App
+          PORT=3000
+          MYSQL_HOST=db
+          MYSQL_PORT=3306
+          MYSQL_USER=${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DB=${{ secrets.MYSQL_DB }}
+          # DB
+          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+          EOF
 
-      - name: Crear carpeta remota y copiar archivos
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          source: "docker-compose.prod.yml,.env.prod,nginx/default.conf"
-          target: "/opt/todoapp"
+      - name: Copiar archivos y hacer deploy local
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /opt/todoapp
+          cp docker-compose.prod.yml .env.prod nginx/default.conf /opt/todoapp/
+          cd /opt/todoapp
 
-      - name: Deploy remoto en VM
-        uses: appleboy/ssh-action@v0.1.10
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          script: |
-            set -euo pipefail
-            cd /opt/todoapp
-            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-            mv -f .env.prod .env
-            echo "$VERSION" > DEPLOYED_VERSION.txt
-            VERSION="$VERSION" docker compose -f docker-compose.prod.yml pull
-            VERSION="$VERSION" docker compose -f docker-compose.prod.yml up -d --remove-orphans
-            docker image prune -f
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          mv -f .env.prod .env
+          echo "$VERSION" > DEPLOYED_VERSION.txt
+          VERSION="$VERSION" docker compose -f docker-compose.prod.yml pull
+          VERSION="$VERSION" docker compose -f docker-compose.prod.yml up -d --remove-orphans
+          docker image prune -f
