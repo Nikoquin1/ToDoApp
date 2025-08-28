@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  db:
+    image: mysql:8.0
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DB}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app-tests:
+    build:
+      context: .
+      target: test-runner
+    environment:
+      NODE_ENV: test
+      MYSQL_HOST: ${MYSQL_HOST:-db}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DB: ${MYSQL_DB}
+    depends_on:
+      db:
+        condition: service_healthy

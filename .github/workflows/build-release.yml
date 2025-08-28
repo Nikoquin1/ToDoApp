@@ -31,6 +31,14 @@ jobs:
           echo "No se pudo resolver VERSION. Si ejecutas manual, pasa 'tag' (ej: v0.1.0)."
           exit 1
 
+      - name: Run tests with Docker Compose
+        env:
+          COMPOSE_DOCKER_CLI_BUILD: 1
+          DOCKER_BUILDKIT: 1
+        run: |
+          docker compose -f docker-compose.test.yml up --build --exit-code-from app-tests
+          docker compose -f docker-compose.test.yml down -v
+
       - name: Derivar tags (semver y sha)
         id: meta
         run: |
