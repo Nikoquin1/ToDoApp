@@ -43,14 +43,13 @@ jobs:
           MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
           EOF
 
-
       - name: Run tests with Docker Compose
         env:
           COMPOSE_DOCKER_CLI_BUILD: 1
           DOCKER_BUILDKIT: 1
         run: |
-          docker compose -f docker-compose.test.yml up --build --exit-code-from app-tests
-          docker compose -f docker-compose.test.yml down -v
+          docker compose --env-file .env.ci -f docker-compose.test.yml up --build --exit-code-from app-tests
+          docker compose --env-file .env.ci -f docker-compose.test.yml down -v
 
       - name: Derivar tags (semver y sha)
         id: meta
@@ -82,9 +81,14 @@ jobs:
             .
 
       - name: Push all tags
-        run: docker push $IMAGE --all-tags
+        run: |
+          docker push $IMAGE:${VERSION}
+          docker push $IMAGE:${{ steps.meta.outputs.clean }}
+          docker push $IMAGE:${{ steps.meta.outputs.major }}.${{ steps.meta.outputs.minor }}
+          docker push $IMAGE:${{ steps.meta.outputs.major }}
+          docker push $IMAGE:latest
+          docker push $IMAGE:sha-${{ steps.meta.outputs.sha7 }}
 
-      # ← ← Guardar la imagen como .tar.gz (artifact)
       - name: Export image as artifact (tar.gz)
         run: |
           mkdir -p artifacts
