@@ -8,10 +8,11 @@ services:
       --collation-server=utf8mb4_unicode_ci
       --default-authentication-plugin=mysql_native_password
     environment:
-      MYSQL_DATABASE: todos
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
       MYSQL_USER: todo
       MYSQL_PASSWORD: supersecret
-      MYSQL_ROOT_PASSWORD: rootsecret
+      MYSQL_DB: todos
     volumes:
       - db-data:/var/lib/mysql
     healthcheck:
@@ -28,6 +29,7 @@ services:
       PORT: 3000
       
       MYSQL_HOST: db
+      MYSQL_PORT: 3306
       MYSQL_USER: todo
       MYSQL_PASSWORD: supersecret
       MYSQL_DB: todos

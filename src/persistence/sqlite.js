@@ -101,13 +101,21 @@ async function removeItem(id) {
         });
     });
 }
+// ... tu código actual (init, teardown, etc.)
+
+async function clear() {
+  return new Promise((res, rej) => {
+    pool.run('DELETE FROM todo_items', err => (err ? rej(err) : res()));
+  });
+}
 
 module.exports = {
-    init,
-    teardown,
-    getItems,
-    getItem,
-    storeItem,
-    updateItem,
-    removeItem,
+  init,
+  teardown,
+  getItems,
+  getItem,
+  storeItem,
+  updateItem,
+  removeItem,
+  clear,           // <-- exportado para tests
 };
