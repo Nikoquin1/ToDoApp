@@ -106,7 +106,7 @@ jobs:
           path: artifacts/todoapp-${{ steps.meta.outputs.clean }}.tar.gz
           retention-days: 7
 
-      # ← Artifact mínimo para que el deploy sepa qué tag usar
+      # Producing the image-meta artifact for deploy workflow
       - name: Guardar metadata de imagen (VERSION)
         run: |
           mkdir -p artifact
