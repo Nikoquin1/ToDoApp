@@ -89,7 +89,7 @@ jobs:
           sudo bash -lc "cat /opt/todoapp/.env.prod >> /opt/todoapp/.env"
 
           # Ejecutar compose desde /opt/todoapp
-          sudo bash -lc '
+          sudo env VERSION="${VERSION}" bash -lc '
             set -euo pipefail
             cd /opt/todoapp
             echo "${VERSION}" | tee DEPLOYED_VERSION.txt >/dev/null
@@ -171,7 +171,7 @@ jobs:
           echo "VERSION=${VERSION}" | sudo tee /opt/todoapp/.env >/dev/null
           sudo bash -lc "cat /opt/todoapp/.env.prod >> /opt/todoapp/.env"
 
-          sudo bash -lc '
+          sudo env VERSION="${VERSION}" bash -lc '
             set -euo pipefail
             cd /opt/todoapp
             echo "${VERSION}" | tee DEPLOYED_VERSION.txt >/dev/null
