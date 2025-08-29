@@ -73,9 +73,9 @@ jobs:
           test -f .env.prod
           test -f nginx/default.conf
 
-          sudo mkdir -p /opt/todoapp
-          sudo cp docker-compose.prod.yml .env.prod nginx/default.conf /opt/todoapp/
-          cd /opt/todoapp
+          sudo mkdir -p /opt/todoapp/nginx
+          sudo cp docker-compose.prod.yml .env.prod /opt/todoapp/
+          sudo cp nginx/default.conf /opt/todoapp/nginx/
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
           sudo mv -f .env.prod .env
           echo "$VERSION" | sudo tee DEPLOYED_VERSION.txt
