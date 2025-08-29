@@ -10,16 +10,22 @@ on:
         description: "Tag de versión (ej: v0.1.0)"
         required: true
 
+concurrency:
+  group: build-release
+  cancel-in-progress: true
+
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest
+    # Si quieres usar tu runner de build: [self-hosted, linux, build]
+    runs-on: [self-hosted, linux, build]
     permissions:
-      contents: read
+      contents: write
 
     env:
       IMAGE: docker.io/nikoquin/todoapp
       GIT_SHA: ${{ github.sha }}
       VERSION: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+      DOCKER_BUILDKIT: 1
 
     steps:
       - name: Checkout
@@ -27,21 +33,40 @@ jobs:
 
       - name: Validar VERSION
         if: ${{ env.VERSION == '' }}
+        shell: bash
         run: |
+          set -euo pipefail
           echo "No se pudo resolver VERSION. Si ejecutas manual, pasa 'tag' (ej: v0.1.0)."
           exit 1
+
+      - name: Prep env/secrets for compose (CI)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > .env.ci <<'EOF'
+          PORT=3000
+          MYSQL_HOST=db
+          MYSQL_PORT=3306
+          MYSQL_USER=${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DB=${{ secrets.MYSQL_DB }}
+          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+          EOF
 
       - name: Run tests with Docker Compose
         env:
           COMPOSE_DOCKER_CLI_BUILD: 1
-          DOCKER_BUILDKIT: 1
+        shell: bash
         run: |
-          docker compose -f docker-compose.test.yml up --build --exit-code-from app-tests
-          docker compose -f docker-compose.test.yml down -v
+          set -euo pipefail
+          docker compose --env-file .env.ci -f docker-compose.test.yml up --build --exit-code-from app-tests
+          docker compose --env-file .env.ci -f docker-compose.test.yml down -v
 
       - name: Derivar tags (semver y sha)
         id: meta
+        shell: bash
         run: |
+          set -euo pipefail
           CLEAN="${VERSION#v}"
           MAJOR="$(echo "$CLEAN" | cut -d. -f1)"
           MINOR="$(echo "$CLEAN" | cut -d. -f2)"
@@ -52,12 +77,17 @@ jobs:
           echo "sha7=$SHA7" >> $GITHUB_OUTPUT
 
       - name: Login to Docker Hub
-        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
       - name: Build image
+        shell: bash
         run: |
+          set -euo pipefail
           docker build \
-            --label org.opencontainers.image.source=${{ github.repositoryUrl }} \
+            --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
             --label org.opencontainers.image.revision=${{ github.sha }} \
             --label org.opencontainers.image.version=${{ steps.meta.outputs.clean }} \
             -t $IMAGE:${VERSION} \
@@ -69,11 +99,20 @@ jobs:
             .
 
       - name: Push all tags
-        run: docker push $IMAGE --all-tags
-
-      # ← ← Guardar la imagen como .tar.gz (artifact)
-      - name: Export image as artifact (tar.gz)
+        shell: bash
         run: |
+          set -euo pipefail
+          docker push $IMAGE:${VERSION}
+          docker push $IMAGE:${{ steps.meta.outputs.clean }}
+          docker push $IMAGE:${{ steps.meta.outputs.major }}.${{ steps.meta.outputs.minor }}
+          docker push $IMAGE:${{ steps.meta.outputs.major }}
+          docker push $IMAGE:latest
+          docker push $IMAGE:sha-${{ steps.meta.outputs.sha7 }}
+
+      - name: Export image as artifact (tar.gz)
+        shell: bash
+        run: |
+          set -euo pipefail
           mkdir -p artifacts
           docker save $IMAGE:${{ steps.meta.outputs.clean }} | gzip > artifacts/todoapp-${{ steps.meta.outputs.clean }}.tar.gz
 
@@ -83,3 +122,31 @@ jobs:
           name: docker-image-${{ steps.meta.outputs.clean }}
           path: artifacts/todoapp-${{ steps.meta.outputs.clean }}.tar.gz
           retention-days: 7
+
+      - name: Guardar metadata de imagen (VERSION)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifact
+          echo "VERSION=${VERSION}" > artifact/image_meta.txt
+          echo "CLEAN=${{ steps.meta.outputs.clean }}" >> artifact/image_meta.txt
+
+      - name: Subir artifact con VERSION
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-meta
+          path: artifact/image_meta.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: (Opcional) Actualizar DEPLOYED_VERSION.md
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ github.event.inputs.tag }}" > DEPLOYED_VERSION.md
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git add DEPLOYED_VERSION.md
+          git commit -m "Update deployed version to ${{ github.event.inputs.tag }}" || echo "Sin cambios"
+          git push

@@ -1,0 +1,181 @@
+name: Deploy to VMs (rolling from Docker Hub)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag a desplegar (ej: v0.2.0)"
+        required: true
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+env:
+  IMAGE: docker.io/nikoquin/todoapp
+
+jobs:
+  deploy_canary:
+    name: Canary → deployer-1 (dep1)
+    runs-on: [self-hosted, linux, x64, deploy, docker, dep1]
+
+    steps:
+      - name: Checkout (infra)
+        uses: actions/checkout@v4
+
+      - name: Determinar VERSION (manual)
+        id: choose
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ github.event.inputs.tag || '' }}" ]; then
+            echo "version=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Export VERSION
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER="${{ steps.choose.outputs.version }}"
+          echo "VERSION=$VER" >> $GITHUB_ENV
+          echo "Usando VERSION=$VER"
+
+      - name: Check VERSION is defined
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${VERSION:-}" ]; then
+            echo "VERSION no definido. No puedo continuar."
+            exit 1
+          fi
+
+      - name: Render .env.prod
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > .env.prod << 'EOF'
+          # App
+          PORT=3000
+          MYSQL_HOST=db
+          MYSQL_PORT=3306
+          MYSQL_USER=${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DB=${{ secrets.MYSQL_DB }}
+          # DB
+          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+          EOF
+
+      - name: Copiar archivos y hacer deploy en /opt/todoapp
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ${{ github.workspace }}
+          test -f docker-compose.prod.yml
+          test -f .env.prod
+          test -f nginx/default.conf
+
+          # Sincronizar artefactos a /opt/todoapp
+          sudo mkdir -p /opt/todoapp/nginx
+          sudo cp docker-compose.prod.yml /opt/todoapp/
+          sudo cp .env.prod /opt/todoapp/
+          sudo cp nginx/default.conf /opt/todoapp/nginx/
+
+          # Autenticación a Docker Hub
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+          # Preparar .env final (compose lee /opt/todoapp/.env automáticamente)
+          echo "VERSION=${VERSION}" | sudo tee /opt/todoapp/.env >/dev/null
+          # Mezcla variables de app/DB
+          sudo bash -lc "cat /opt/todoapp/.env.prod >> /opt/todoapp/.env"
+
+          # Ejecutar compose desde /opt/todoapp
+          sudo env VERSION="${VERSION}" bash -lc '
+            set -euo pipefail
+            cd /opt/todoapp
+            echo "${VERSION}" | tee DEPLOYED_VERSION.txt >/dev/null
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            docker image prune -f
+          '
+
+  deploy_rollout:
+    name: Rollout → deployer-2/3 (dep2, dep3)
+    needs: deploy_canary
+    strategy:
+      matrix:
+        target: [dep2, dep3]
+    runs-on: ["self-hosted", "linux", "x64", "deploy", "docker", "${{ matrix.target }}"]
+
+    steps:
+      - name: Checkout (infra)
+        uses: actions/checkout@v4
+
+      - name: Determinar VERSION (manual)
+        id: choose
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ github.event.inputs.tag || '' }}" ]; then
+            echo "version=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Export VERSION
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER="${{ steps.choose.outputs.version }}"
+          echo "VERSION=$VER" >> $GITHUB_ENV
+          echo "Usando VERSION=$VER"
+
+      - name: Check VERSION is defined
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${VERSION:-}" ]; then
+            echo "VERSION no definido. No puedo continuar."
+            exit 1
+          fi
+
+      - name: Render .env.prod
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > .env.prod << 'EOF'
+          # App
+          PORT=3000
+          MYSQL_HOST=db
+          MYSQL_PORT=3306
+          MYSQL_USER=${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_DB=${{ secrets.MYSQL_DB }}
+          # DB
+          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+          EOF
+
+      - name: Copiar archivos y hacer deploy en /opt/todoapp
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ${{ github.workspace }}
+          test -f docker-compose.prod.yml
+          test -f .env.prod
+          test -f nginx/default.conf
+
+          sudo mkdir -p /opt/todoapp/nginx
+          sudo cp docker-compose.prod.yml /opt/todoapp/
+          sudo cp .env.prod /opt/todoapp/
+          sudo cp nginx/default.conf /opt/todoapp/nginx/
+
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+          echo "VERSION=${VERSION}" | sudo tee /opt/todoapp/.env >/dev/null
+          sudo bash -lc "cat /opt/todoapp/.env.prod >> /opt/todoapp/.env"
+
+          sudo env VERSION="${VERSION}" bash -lc '
+            set -euo pipefail
+            cd /opt/todoapp
+            echo "${VERSION}" | tee DEPLOYED_VERSION.txt >/dev/null
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            docker image prune -f
+          '
